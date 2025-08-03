@@ -85,7 +85,7 @@ aat_run_collection:
   allow_failure: true
 
 
-image: registry.gitlab.tech.orange/oln/aoc-ci-automation/admin/ansible-docker-image:1.2.0
+image: < image_with_docker_sshclient_installed>
 chaosTesting:
       
     extends: .rule_policy
@@ -140,7 +140,7 @@ PostchaosTesting:
     CI_USER: $GITLAB_USER_NAME
 
   trigger:
-    project: oln/pace-automation/resilience-automation/ansible_resilience_post_test
+    project: ansible_resilience_post_test
     branch: main
     strategy: depend
 
@@ -153,4 +153,5 @@ otip_stop_ausf/udm:
     RESULTS_PATH: "${CI_PROJECT_DIR}/results-stop"
   allow_failure: true
   stage: .post
+
 
