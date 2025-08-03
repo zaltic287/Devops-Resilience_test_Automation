@@ -1,0 +1,5 @@
+- name: install k8s_chaos_role
+  gather_facts: no
+  hosts: k8s_node
+  roles:
+  - k8s_chaos_role
