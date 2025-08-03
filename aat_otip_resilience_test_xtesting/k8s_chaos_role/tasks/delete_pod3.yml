@@ -1,0 +1,109 @@
+- name: Fail if pod_filter is not defined or empty
+  fail:
+    msg: "You must define a non-empty list of pod_filter."
+  when: pod_filter is not defined or pod_filter | length == 0
+
+- name: Loop over pod_filter list
+  block:
+
+    - name: Set current filter
+      set_fact:
+        current_filter: "{{ item }}"
+
+    - name: Find namespace for current filter
+      shell: >
+        kubectl get pods --all-namespaces --no-headers |
+        grep {{ current_filter }} | awk '{print $1}' | head -n 1
+      register: namespace_result
+      changed_when: false
+      failed_when: namespace_result.stdout == ""
+
+    - name: Set facts for current filter
+      set_fact:
+        namespace: "{{ namespace_result.stdout | trim }}"
+        remote_artifact_path: "/tmp/{{ current_filter }}.md"
+
+    - name: Capture pod state before deletion
+      shell: |
+        echo "# Pod's state before deletion for filter: {{ current_filter }}" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        kubectl get pods -n {{ namespace }} -o wide | grep {{ current_filter }} >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: List matching pods
+      shell: "kubectl get pod -n {{ namespace }} | grep {{ current_filter }} | awk '{print $1}'"
+      register: pod_list
+      changed_when: false
+
+    - name: Fail if no pod found
+      fail:
+        msg: "No pod found matching '{{ current_filter }}' in namespace '{{ namespace }}'."
+      when: pod_list.stdout == ""
+
+    - name: Choose random pod to delete
+      set_fact:
+        pod_name: "{{ pod_list.stdout.split() | random }}"
+
+    - name: Log pod about to be deleted
+      shell: |
+        echo "## Deleting POD matching {{ current_filter }}" >> {{ remote_artifact_path }}
+        echo "Pod deleted : {{ pod_name }}" >> {{ remote_artifact_path }}
+
+    - name: Delete the pod
+      shell: "kubectl delete pod {{ pod_name }} -n {{ namespace }}"
+      register: delete_result
+
+    - name: Log post-deletion state
+      shell: |
+        echo "## State after deletion" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        kubectl get pods -n {{ namespace }} -o wide | grep {{ current_filter }} >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: Check if new pod is created
+      shell: |
+        kubectl get pods -n {{ namespace }} --sort-by=.metadata.creationTimestamp \
+          | grep {{ current_filter }} | tail -n 1 | awk '{print $1}'
+      register: latest_pod_name
+      changed_when: false
+
+    - name: Check pod status
+      shell: |
+        kubectl get pod -n {{ namespace }} {{ latest_pod_name.stdout }} -o jsonpath='{.status.phase}'
+      register: latest_pod_status
+      changed_when: false
+
+    - name: Log new pod info
+      shell: |
+        echo "## New pod status" >> {{ remote_artifact_path }}
+        echo "Pod name: {{ latest_pod_name.stdout }}" >> {{ remote_artifact_path }}
+        echo "Pod Status: {{ latest_pod_status.stdout }}" >> {{ remote_artifact_path }}
+      when: latest_pod_name.stdout != ""
+
+    - name: Fetch logs locally
+      fetch:
+        src: "{{ remote_artifact_path }}"
+        dest: "public/"
+        flat: yes
+
+  loop: "{{ pod_filter }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Generate index.html for GitLab Pages
+  shell: |
+    echo '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Résultats des tests</title>
+    <style>
+      body { font-family: Arial; padding: 2em; background: #f9f9f9; }
+      h1 { color: #333; }
+      ul { list-style-type: none; padding: 0; }
+      li { margin: 0.5em 0; }
+      a { text-decoration: none; color: #2c3e50; font-weight: bold; }
+      a:hover { text-decoration: underline; }
+    </style></head><body><h1> Résultats des tests</h1><ul>' > public/index.html && \
+    for file in public/*.md; do \
+      filename=$(basename "$file"); \
+      echo "<li><a href=\"$filename\">$filename</a></li>" >> public/index.html; \
+    done && \
+    echo '</ul></body></html>' >> public/index.html
+  delegate_to: localhost

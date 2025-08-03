@@ -1,0 +1,227 @@
+  - name : fetch the pipeline duration
+    uri:
+      url: "https://gitlab.tech.orange/api/v4/projects/450544/pipelines/{{ gitlab_pipeline_id }}"
+      method: GET
+      headers:
+          PRIVATE-TOKEN: "{{ gitlab_token }}"
+      return_content: yes
+    register: pipeline_details
+    delegate_to: localhost
+
+  - name: Print the duration of the Pipeline
+    debug:
+      msg: "Pipeline Duration : {{ pipeline_details.json.duration }} seconds"
+  
+  - name: set pipeline_duration variable
+    set_fact:
+      pipeline_duration: "{{ pipeline_details.json.duration }}"
+
+
+    
+# find the markdown file for evry tests
+  - name: find files  RESI-TEST-*.md in the remote host
+    find:
+      paths: /tmp
+      patterns: '^RESI-TEST-.*\.md$'
+      use_regex: true
+    register: resi_md_files
+
+  - name: set remote_markdown_files variable
+    set_fact:
+      remote_markdown_files: "{{ resi_md_files | trim}}"
+
+  - name: Copy matched file in public/
+    fetch:
+      src: "{{ item.path }}"
+      dest: "public/"
+      flat: yes
+    loop: "{{ remote_markdown_files.files }}"
+    when: remote_markdown_files.matched > 0
+
+
+# Generate Gitlab html page
+  - name: Generation GitLab Pages
+    shell: |
+      echo '<!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Chaos Test Results</title>
+        <style>
+          body { font-family: Arial, sans-serif; background: #f9f9f9; padding: 2em; color: #333; }
+          h1 { color: #222; margin-bottom: 1em; }
+          .card {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 1em 1.5em;
+            margin-bottom: 2em;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+          }
+          .card h2 { font-size: 1.2em; border-bottom: 1px solid #eee; padding-bottom: 0.5em; margin-top: 0; }
+          .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1em;
+          }
+
+          .info-block-right {
+            text-align: right;
+          }
+          .info-block { margin-bottom: 0.5em; }
+          .success { color: green; font-weight: bold; }
+          .fail { color: red; font-weight: bold; }
+          .status-dot {
+            height: 12px;
+            width: 12px;
+            background-color: green;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+          }
+          .container {
+            max-width: 800px;
+            margin: 0 auto;
+          }
+
+          .test-line {
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            align-items: center;
+            gap: 1em;
+          }
+          ul { list-style: none; padding-left: 1em; }
+          li { margin: 0.5em 0; }
+          a { color: #2c3e50; text-decoration: none; font-weight: bold; }
+          a:hover { text-decoration: underline; }
+
+          .download-all {
+            text-align: center;
+            margin-top: 2em;
+          }
+          .download-all a {
+            background-color: #2c3e50;
+            color: white;
+            padding: 0.5em 1em;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+          }
+        </style>
+      </head>
+      <body>
+
+      <h1>Tests Results</h1>
+      <div class="container">
+      <div class="card">
+        <h2>Pipeline Informations</h2>
+        <div class="info-grid">
+          <div class="info-block"><strong>Pipeline Name:</strong> {{ pipeline_name }}</div>
+          <div class="info-block info-block-right"><strong>Job Name:</strong> {{ job_name }}</div>
+          <div class="info-block"><strong>Cluster Target:</strong> {{ cluster }}</div>
+          <div class="info-block info-block-right"><strong>GitLab User:</strong> {{ci_user}}</div>
+          <div class="info-block"><strong>Pipeline Duration:</strong> {{pipeline_duration}} seconds</div>
+          <div class="info-block success info-block-right">All Jobs are {{job_status}}</div>
+          <div class="info-block"><strong>Execution Date:</strong> '$(TZ=Europe/Paris date "+%Y-%m-%d %H:%M:%S %Z")'</div>
+        </div>
+      </div>
+      </div>
+      ' > public/index.html
+
+      # Tri des fichiers
+      pod_deletion=""
+      reboot_worker=""
+      reboot_master=""
+      reboot_compute=""
+
+      for file in public/*.md; do
+        [ -e "$file" ] || continue
+        filename=$(basename "$file")
+        filtername="${filename%.md}"
+
+        case "$filtername" in
+          *ccd6-w*) reboot_worker+="$filename;" ;;
+          *ccd6-controller*) reboot_master+="$filename;" ;;
+          *compute*) reboot_compute+="$filename;" ;;
+          *) pod_deletion+="$filename;" ;;
+        esac
+      done
+
+      # Fonction pour afficher les sections avec statuts à droite
+      print_section() {
+        title="$1"
+        files="$2"
+        echo "<div class=\"card\">
+        <h2>$title</h2>
+        <ul>" >> public/index.html
+
+        IFS=';' read -ra list <<< "$files"
+        for fname in "${list[@]}"; do
+          [ -z "$fname" ] && continue
+
+          pod_status=$(grep -i "Pod Status:" "public/$fname" | head -n 1 | cut -d':' -f2 | xargs | tr '[:upper:]' '[:lower:]')
+
+          if [[ "$pod_status" == "running" ]]; then
+            status="Success"
+            class="success"
+            dot_color="green"
+          else
+            status="Fail"
+            class="fail"
+            dot_color="red"
+          fi
+
+          echo "<li class=\"test-line\">
+            <span><span class=\"status-dot\" style=\"background-color: $dot_color;\"></span>
+            <a href=\"viewer.html?file=$fname\">${fname%.md}</a></span>
+            <span class=\"$class\">$status</span>
+            <span><a href=\"$fname\" download>Download</a></span>
+          </li>" >> public/index.html
+        done
+
+        echo "</ul></div>" >> public/index.html
+      }
+
+      # Affichage des sections
+      print_section "Deletion of POD" "$pod_deletion"
+      print_section "Reboot of Workers" "$reboot_worker"
+      print_section "Reboot of Masters" "$reboot_master"
+      print_section "Reboot of Compute" "$reboot_compute"
+
+      # Zip de tous les fichiers .md
+      zip -j public/all_results.zip public/*.md
+
+      # Ajout du lien global de téléchargement
+      echo "<div class=\"download-all\">
+        <span><a href=\"all_results.zip\" download>DownLoad All files</a></span>
+      </div>" >> public/index.html
+
+      echo '</body></html>' >> public/index.html
+
+
+    args:
+      executable: /bin/bash
+    delegate_to: localhost
+
+# Copy the the viewer file which will convert the markdown file to html file
+  - name: Copy the viewer to the public repo
+    copy:
+      src: viewer.html
+      dest: public/viewer.html
+    delegate_to: localhost
+
+
+# Delete file from remote host
+
+  - name: delete file apter copying them to local host
+    file:
+      path: "{{ item.path }}"
+      state: absent
+    loop: "{{ remote_markdown_files.files }}"
+    when: remote_markdown_files.matched > 0
+  #- name: Clean up remote artifact file
+   # file:
+    #  path: "/tmp/RESI*.md"
+     # state: absent
+
+

@@ -1,0 +1,142 @@
+# delete_pods.yml
+- name: Find namespace for current filter
+  shell: >
+    kubectl get pods --all-namespaces --no-headers |
+    grep {{ current_filter }} | awk '{print $1}' | head -n 1
+  register: namespace_result
+  changed_when: false
+  failed_when: namespace_result.stdout == ""
+
+
+- name: Définir le numéro basé sur current_filter
+  set_fact:
+    namespace: "{{ namespace_result.stdout | trim }}"
+    resi_test_number: >-
+      {% if current_filter == 'sm-pgw-session' %}
+        23
+      {% elif current_filter == 'sm-udp-forwarder' %}
+        36
+      {% elif current_filter == 'sm-ip-allocator' %}
+        37
+      {% elif current_filter == 'sm-controller' %}
+        41
+      {% elif current_filter == 'kvdb' %}
+        42
+      {% elif current_filter == 'sm-sgw-session' %}
+        33
+      {% elif current_filter == 'mm-controller' %}
+        26
+      {% elif current_filter == 'mm-sctp' %}
+        30
+      {% else %}
+        00
+      {% endif %}
+
+- name: set dynamically the the resilience number
+  set_fact:
+    remote_artifact_path: "/tmp/RESI-TEST-{{resi_test_number | trim}}-{{current_filter}}.md"
+
+
+- name: Capture pod state before deletion
+  shell: |
+    echo "# Pod's state before deletion for filter: {{ current_filter }}" >> {{ remote_artifact_path }}
+    echo "" >> {{ remote_artifact_path }}
+    echo '```' >> {{ remote_artifact_path }}
+    kubectl get pods -n {{ namespace }} -o wide | grep {{ current_filter }} >> {{ remote_artifact_path }}
+    echo '```' >> {{ remote_artifact_path }}
+
+- name: List matching pods
+  shell: "kubectl get pod -n {{ namespace }} | grep {{ current_filter }} | awk '{print $1}'"
+  register: pod_list
+  changed_when: false
+
+- name: Fail if no pod found
+  fail:
+    msg: "No pod found matching '{{ current_filter }}' in namespace '{{ namespace }}'."
+  when: pod_list.stdout == ""
+
+- name: Choose random pod to delete
+  set_fact:
+    pod_name: "{{ pod_list.stdout.split() | random }}"
+
+- name: Log pod about to be deleted
+  shell: |
+    echo "# Deleting POD matching {{ current_filter }}" >> {{ remote_artifact_path }}
+    echo "" >> {{ remote_artifact_path }}
+    echo "Pod deleted : {{ pod_name }}" >> {{ remote_artifact_path }}
+
+- name: Delete the pod
+  shell: "kubectl delete pod {{ pod_name }} -n {{ namespace }}"
+  register: delete_result
+
+- name: Log post-deletion state
+  shell: |
+    echo "# State after deletion" >> {{ remote_artifact_path }}
+    echo "" >> {{ remote_artifact_path }}
+    echo '```' >> {{ remote_artifact_path }}
+    kubectl get pods -n {{ namespace }} -o wide | grep {{ current_filter }} >> {{ remote_artifact_path }}
+    echo '```' >> {{ remote_artifact_path }}
+
+- name: Check if new pod is created
+  shell: |
+    kubectl get pods -n {{ namespace }} --sort-by=.metadata.creationTimestamp \
+      | grep {{ current_filter }} | tail -n 1 | awk '{print $1}'
+  register: latest_pod_name
+  changed_when: false
+
+- name: Check pod status
+  shell: |
+    kubectl get pod -n {{ namespace }} {{ latest_pod_name.stdout }} -o jsonpath='{.status.phase}'
+  register: latest_pod_status
+  changed_when: false
+
+- name: Log for new pod info
+  shell: |
+    echo "# New pod status" >> {{ remote_artifact_path }}
+    echo "" >> {{ remote_artifact_path }}
+    echo "Pod name: {{ latest_pod_name.stdout }}" >> {{ remote_artifact_path }}
+    echo "" >> {{ remote_artifact_path }}
+    echo "Pod Status: {{ latest_pod_status.stdout }}" >> {{ remote_artifact_path }}
+  when: latest_pod_name.stdout != ""
+
+
+# Check the Right AMF 
+- name: Define the right AMF ip address
+  set_fact:
+    amf_ip_address: >-
+      {% if cluster == 'eccd6' %}
+        172.19.20.81
+      {% elif cluster == 'eccd5' %}
+        172.19.20.73
+      {% else %}
+        00
+      {% endif %}
+
+# Connection to amf
+- name: SSH connection to AMF
+  command: ssh -o StrictHostKeyChecking=no pcc-admin@172.19.20.81 gsh get_eq_cpu_load 
+  register: node_hostname
+  changed_when: false
+  failed_when: node_hostname.rc != 0
+  #delegate_to: localhost
+
+    
+# fetch data from ams
+- name: fetch data from AMF
+  shell: |
+    echo "# CPU LOAD FROM AMF " >> {{ remote_artifact_path }}
+    echo "{{ node_hostname.stdout }}" >> {{ remote_artifact_path }}
+
+
+  
+#- name: Fetch logs locally
+ # fetch:
+  #  src: "{{ remote_artifact_path }}"
+   # dest: "public/"
+    #flat: yes
+
+#- name: Clean up remote artifact file
+ # file:
+  #  path: "{{ remote_artifact_path }}"
+   # state: absent
+

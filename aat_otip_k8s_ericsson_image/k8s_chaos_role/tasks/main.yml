@@ -1,0 +1,17 @@
+- name: Process deletion of each pod_filter
+  include_tasks: delete_pod6.yml
+  loop: "{{ pod_filter }}"
+  loop_control:
+    loop_var: current_filter
+
+- name: Reboot worker
+  include_tasks: reboot_worker_ht.yml
+
+- name: Reboot worker
+  include_tasks: reboot_worker_std.yml
+
+- name: Reboot worker
+  include_tasks: reboot_master2.yml
+
+- name: Reboot worker
+  include_tasks: reboot_compute.yml

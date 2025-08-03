@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title></title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #f9f9f9;
+      color: #333;
+      padding: 2em;
+      max-width: 900px;
+      margin: auto;
+    }
+    h1, h2, h3 {
+      color: #2c3e50;
+    }
+    pre {
+      background: #f0f0f0;
+      padding: 1em;
+      border-radius: 5px;
+      overflow-x: auto;
+    }
+    code {
+      font-family: Consolas, monospace;
+    }
+    a {
+      color: #0077cc;
+    }
+  </style>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+</head>
+<body>
+
+<div id="content">Chargement...</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/common.min.js"></script>
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const file = params.get("file");
+
+  if (!file) {
+    document.getElementById("content").innerHTML = "<p style='color:red'>Aucun fichier spécifié.</p>";
+  } else {
+    fetch(file)
+      .then(response => {
+        if (!response.ok) throw new Error("Fichier non trouvé");
+        return response.text();
+      })
+      .then(text => {
+        marked.setOptions({
+          highlight: function(code, lang) {
+            const validLang = hljs.getLanguage(lang) ? lang : 'plaintext';
+            return hljs.highlight(code, { language: validLang }).value;
+          }
+        });
+        document.getElementById("content").innerHTML = marked.parse(text);
+      })
+      .catch(err => {
+        document.getElementById("content").innerHTML = "<p style='color:red'>Erreur lors du chargement du fichier : " + err + "</p>";
+      });
+  }
+</script>
+
+</body>
+</html>

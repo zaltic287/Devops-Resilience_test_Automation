@@ -1,0 +1,84 @@
+- name:
+  block:
+    - name: Get the IP addresses of workers
+      command: kubectl get nodes --selector='node-role.kubernetes.io/control-plane' -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'
+      register: k8s_masters_ips
+
+    - name: Select a random worker IP
+      set_fact:
+        random_master_ip: "{{ k8s_masters_ips.stdout.split() | random }}"
+
+    - name: SSH to the worker and get hostname
+      command: ssh -o StrictHostKeyChecking=no {{ random_master_ip }} hostname -s
+      register: node_hostname
+      changed_when: false
+      failed_when: node_hostname.rc != 0
+
+    - name: Set hostname facts
+      set_fact:
+        master_hostname: "{{ node_hostname.stdout | trim }}"
+      
+    - name: Set artifact path facts
+      set_fact:
+        remote_artifact_path: "/tmp/RESI-TEST-{{ master_hostname }}.md"
+
+
+    - name: Capture master nodes before reboot
+      shell: |
+        echo "# List of standard nodes before reoot" >> {{ remote_artifact_path }}
+        echo "" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        kubectl get nodes -o wide | grep controller >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: Print the hostname of the rebooted worker
+      debug:
+        msg: "The rebooted master is : {{ master_hostname }}"
+
+    - name: Capture node state before reboot
+      shell: |
+        echo "# Node Status before reboot" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        echo " Master Node rebooted: {{ master_hostname }} " >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: Reboot the worker
+      command: ssh {{ random_master_ip }} sudo reboot
+      async: 1
+      poll: 0
+
+
+    - name: wait while the Node is rebooting
+      shell: 
+        sleep 60
+        
+
+    - name: Wait for node to be Ready again
+      shell: |
+        until kubectl get node {{ master_hostname }} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' | grep True; do
+          sleep 10
+        done
+      retries: 30
+      delay: 5
+      register: node_status
+      changed_when: false
+
+
+    - name: Capture the return varible from checking whether the node is Ready or not
+      set_fact:
+        current_node_status: "{{ node_status.stdout.split() | trim }}"
+
+    - name: Add the current Node Status checking
+      shell: |
+        echo "# Cuurrent Node State while Rebooting" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        echo "{{ current_node_status }}" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: Get node state after reboot
+      shell: |
+        echo "# Node state after reboot" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        kubectl get node {{ master_hostname }} -o wide >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+

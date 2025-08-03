@@ -1,0 +1,31 @@
+    - name: Restart un worker node when the action is 'reboot_worker'
+      block:
+        - name: Get the Ip adress of workers
+          command: kubectl get nodes --selector='!node-role.kubernetes.io/control-plane' -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'
+          register: k8s_workers_ips
+
+
+        - name: select a random IP adress from the worker
+          set_fact:
+            random_worker_ip: "{{ k8s_workers_ips.stdout.split() | random }}"
+
+
+        - name: SSH connection to the random worker and get the hostname
+          command: ssh -o StrictHostKeyChecking=no {{ random_worker_ip }} hostname -s
+          register: node_hostname
+          changed_when: false
+          failed_when: node_hostname.rc != 0
+
+        - name: Set hostname fact
+          set_fact:
+            worker_hostname: "{{ node_hostname.stdout | trim }}" 
+
+        - name: Print the hostname of the rebooted worker
+          debug:
+            msg: "The reooted worker is : {{worker_hostname}}" 
+
+        - name: Reboot the worker
+          command: ssh {{ random_worker_ip }} sudo reboot
+          async: 1
+          poll: 0
+      when: action == "reboot_worker"

@@ -1,0 +1,142 @@
+
+---
+include:
+  - project: "oln/nif/validation-skc/core/ci-templates/sut"
+    ref: "1.4.26"
+    file: "templates/gitlab-ci-sut.yml"
+  - project: "oln/nif/validation-skc/core/ci-templates/xtesting-generic"
+    ref: "2.4.5"
+    file: "templates/gitlab-ci-xtesting.yml"
+  - project: "oln/nif/validation-skc/core/ci-templates/aat"
+    ref: "2.0.8"
+    file: "templates/gitlab-ci-aat.yml"
+  - project: 'oln/nif/validation-skc/core/ci-templates/otip'
+    ref: '1.3.59'
+    file: '/templates/gitlab-ci-otip-ssh-basic.yml'
+
+  - local: 'vars/variable.yml'
+  - local: 'templates/rules.yml'
+  
+workflow:
+  rules:
+    - changes:
+        - .gitlab-ci.yml  
+
+variables:
+  AAT_SERVER_FILE: "${AAT_LT2_TZ_SERVER}"
+  AAT_SERVICE: "E2E_LT"
+  XTESTING_UPLOAD_ARTIFACTS: "true"
+  XTESTING_UPLOAD_ARTIFACTS_BUCKET: "di-diod-innov-net-skc-vdr-ericsson"
+  AWS_ACCESS_KEY_ID: $DIOD_S3_ACCESS_KEY_ID
+  AWS_SECRET_ACCESS_KEY: $DIOD_S3_SECRET_ACCESS_KEY
+  OTIP_PORT: "5551"
+  OTIP_SCRIPTS_DIR: "/opt/otip/fiches/ausf_udm"
+  OTIP_PROFILE_PATH: "$OTIP_SCRIPTS_DIR/Profiles/ausf_udm_ercsn2_RI_0_AAT_Load_site_2.yml"
+  OTIP_START_SCENARIO_PATH: "$OTIP_SCRIPTS_DIR/start_scenario.yaml"
+  OTIP_STOP_SCENARIO_PATH: "$OTIP_SCRIPTS_DIR/stop_scenario.yaml"
+  DRIVER_IMAGE_VERSION: "3.0.1"
+
+
+
+aat_read_collection:
+  extends:
+    - ".xtesting.test"
+    - ".aat.base"
+  needs: []
+  variables:
+    XTESTING_TESTS: "read_collection"
+  stage: test
+
+
+otip_start_ausf-udm:
+  extends:
+    - .otip-test-exec.ssh
+  needs: ["aat_read_collection"]
+  variables:
+    OTIP_SCENARIO_PATH: "$OTIP_START_SCENARIO_PATH"
+    RESULTS_PATH: "${CI_PROJECT_DIR}/results-start"
+
+
+aat_activate_configuration:
+  extends:
+    - ".xtesting.test"
+    - ".aat.base"
+  needs: 
+  - job: otip_start_ausf-udm
+    optional: true
+  variables:
+    XTESTING_TESTS: "test"
+    XTESTING_GITLAB_UPLOAD_ALL_FILES: "false"
+    AAT_COLLECTION_NAME: "Orange_AAT_LT_5GC_Activate_Configuration_Site2"
+    AAT_THRESHOLD: "0"
+  stage: test
+
+
+aat_run_collection:
+  extends:
+    - ".xtesting.test"
+    - ".aat.base"
+  needs: ["aat_activate_configuration"]
+  variables:
+    XTESTING_TESTS: "test"
+    XTESTING_GITLAB_UPLOAD_ALL_FILES: "false"
+    AAT_COLLECTION_NAME: "5G_UE_TM_20_min"
+    AAT_THRESHOLD: "0"
+  stage: test
+  allow_failure: true
+
+
+chaos-xtesting:
+  extends:
+    - ".xtesting.test"  # Pour hériter automatiquement de l’intégration entre Xtesting et GitLab
+  needs: 
+  - job: aat_activate_configuration
+    optional: true
+  image:
+    name: "${CI_REGISTRY}/oln/nif/validation-skc/...:1.0.0"  # URL de l’image Xtesting que tu as buildée
+  variables:
+    XTESTING_TESTS: "all"  # Soit "all", soit le nom du tier, soit le nom du testcase Xtesting que tu veux exécuter
+    # Variables à faire passer à Xtesting et aux tasks Ansible
+    ssh_target: $SSH_TARGET 
+    gitlab_token: $GITLAB_TOKEN
+    gitlab_pipeline_id: $CI_PIPELINE_ID 
+    pipeline_name: $ACTION
+    job_status: $CI_JOB_STATUS 
+    job_name: $CI_JOB_NAME 
+    cluster: $CLUSTER
+    ci_user: $GITLAB_USER_NAME 
+    ssh_password: $AMF_SMF_PASSWORD
+    amf_site2: $AMF_TARGET_SITE2 
+    amf_site1: $AMF_TARGET_SITE1
+    cee_ip_address: $CEE_IP_ADDRESS 
+    ssh_password_cee: $SSH_PAS
+    ANSIBLE_PASS: $ANSIBLE_PASS
+    SSH_USER: $SSH_USER
+
+  after_script:
+    - cp -r /var/lib/xtesting/results .
+
+  script:
+    - run_tests -t all
+
+  artifacts:
+    paths:
+      - results
+    expire_in: 1 hour
+    when: always
+
+
+  tags:
+      - graas-like
+      - nis
+      - k8s
+
+
+otip_stop_ausf/udm:
+  extends:
+    - .otip-test-exec.ssh
+  variables:
+    OTIP_SCENARIO_PATH: "$OTIP_STOP_SCENARIO_PATH"
+    RESULTS_PATH: "${CI_PROJECT_DIR}/results-stop"
+  allow_failure: true
+  stage: .post

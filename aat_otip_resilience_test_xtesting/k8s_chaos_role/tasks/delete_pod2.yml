@@ -1,0 +1,101 @@
+- name: delete a pod when the action is 'delete_pod'
+  block:
+
+    - name: Verify if the pod filter is defined
+      fail:
+        msg: "Error: you have to specify the variable 'pod_filter'."
+      when: pod_filter == ""
+
+    - name: Find the namespace of the pod matching the filter
+      shell: >
+        kubectl get pods --all-namespaces --no-headers |
+        grep {{ pod_filter }} | awk '{print $1}' | head -n 1
+      register: namespace_result
+      changed_when: false
+      failed_when: namespace_result.stdout == ""
+      
+    - name: set facts
+      set_fact:
+        remote_artifact_path: "/tmp/{{ pod_filter }}.md"
+        namespace: "{{ namespace_result.stdout | trim }}"
+
+
+    - name: Capture the state of the Pods before deletion
+      shell: |
+        echo "#Pod's state before deletion" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        kubectl get pods -n {{namespace}} -o wide | grep {{pod_filter}} >> {{remote_artifact_path}}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: List pods matching the filter
+      shell: "kubectl get pod -n {{ namespace }} | grep {{ pod_filter }} | awk '{print $1}'"
+      register: pod_list
+      changed_when: false
+
+    - name: Fail if no pod matches
+      fail:
+        msg: "No pod found with the filter '{{ pod_filter }}' in namespace '{{ namespace }}'."
+      when: pod_list.stdout == ""
+
+    - name: Pod list before deletion
+      shell: "echo '**Pods before deletion :** `{{ pod_list.stdout.split() }}`' >> {{ remote_artifact_path }}"
+
+
+    - name: Select a random pod from the list
+      set_fact:
+        pod_name: "{{ pod_list.stdout.split() | random }}"
+
+    - name: Add deletion operation to log
+      shell: |
+        echo "## Deletion of the POD" >> {{ remote_artifact_path }}
+        echo "Pod deleted : {{ pod_name }}" >> {{ remote_artifact_path }}
+
+    - name: Delete the pod
+      shell: "kubectl delete pod {{ pod_name }} -n {{ namespace }}"
+      register: delete_result
+      when: pod_name is defined
+
+    - name: Log post-deletion pod state
+      shell: |
+        echo "## State after deletion" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        kubectl get pods -n {{namespace}} -o wide | grep {{pod_filter}} >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: Print result
+      debug:
+        msg: "Deleted pod: {{ pod_name }}"
+
+    - name: Check if a new Pod matching the filter is created
+      shell: |
+        kubectl get pods -n {{ namespace }} --sort-by=.metadata.creationTimestamp \
+          | grep {{ pod_filter }} | tail -n 1 | awk '{print $1}'
+      register: latest_pod_name
+      changed_when: false
+
+    - name: Check if the Pod is Running
+      shell: |
+        kubectl get pod -n {{ namespace }} {{ latest_pod_name.stdout }} -o jsonpath='{.status.phase}'
+      register: latest_pod_status
+      changed_when: false
+
+    - name: Add logs to the remote artifact path
+      shell: |
+        echo "## Status of the new pod created after deletion" >> {{ remote_artifact_path }}
+        echo "Pod name: {{ latest_pod_name.stdout }}" >> {{ remote_artifact_path }}
+        echo "Pod Status: {{ latest_pod_status.stdout }}" >> {{ remote_artifact_path }}
+      when: latest_pod_name.stdout != ""
+
+
+    - name: Fetch artifact from remote to local
+      fetch:
+        src: "{{ remote_artifact_path }}"
+        dest: "artifacts/"
+        flat: yes
+
+    - name: Clean up temp file
+      file:
+        path: "{{ remote_artifact_path }}"
+        state: absent
+
+  when: action == "delete_pod"

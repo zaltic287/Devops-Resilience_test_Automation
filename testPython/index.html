@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Website with Message & Registration Form</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- Unicons -->
+  <link rel="stylesheet" href="https://unicons.iconscout.com/release/v4.0.0/css/line.css" />
+</head>
+
+<body>
+  <!-- Header -->
+  <header class="header">
+    <nav class="nav">
+      <a href="#" class="nav_logo">Faizdev</a>
+
+      <ul class="nav_items">
+        <li class="nav_item">
+          <a href="#" class="nav_link">Accueil</a>
+          <a href="#" class="nav_link">Produit</a>
+          <a href="#" class="nav_link">Services</a>
+          <a href="#" class="nav_link">Contact</a>
+        </li>
+      </ul>
+
+      <button class="button" name="button" id="form-open">Message</button>
+    </nav>
+  </header>
+
+  <!-- Home -->
+  <section class="home">
+    <div class="form_container">
+      <i class="uil uil-times form_close"></i>
+      <!-- Message Form -->
+      <div class="form message_form">
+        <form id="messageForm" action="#">
+          <h2>Message</h2>
+
+          <div class="input_box">
+            <input type="email" id="email" name="email" placeholder="Enter your email" required />
+            <i class="uil uil-envelope-alt email"></i>
+          </div>
+
+          <div class="input_box">
+            <input type="text" id="fullName" name="fullName" placeholder="Enter votre nom complet" required />
+            <i class="uil uil-user text"></i>
+          </div>
+
+          <div class="input_box">
+            <input type="text" id="message" name="message" placeholder="Enter votre message" required />
+            <i class="uil uil-envelope message"></i>
+          </div>
+
+          <button class="button" name="send" onclick="submitForm()">Envoyé</button>
+        </form>
+      </div>
+    </div>
+
+
+
+    <script src="script.js"></script>
+</body>
+
+</html>

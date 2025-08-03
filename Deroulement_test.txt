@@ -1,0 +1,30 @@
+1. Lancer OTIP (AUSF et UDM)
+
+2. Verifier que les instances AUSF et UDM sont bien lancées 
+
+TBCL
+6	10	AUSFclient: 2xx REGISTERED	1	0.015	0.015	0.015	0	 	 	 
+6	11	UDMclient:  2xx REGISTERED	1	0.013	0.013	0.013	0
+
+CPT
+6	10	AUSFclient: REGISTER sent to NRF	1	0
+6	11	UDMclient: REGISTER sent to _NRF	1	0
+
+	 	 	 
+3. Se connecter sur aatload et lancer deux scripts: 
+
+ - Monter les gnodeb : activate_configuration
+ - Lancer_le_trafic : pendant 15 mn
+ - verifie que le trafic fonctionne bien
+
+4. Lancer le chaos test: ansible
+
+5. Collecter les logs : aatload, cnom, grafana if possible
+
+
+
+htp : node_worker with high throughtput
+std : node_worker with standard
+
+
+kubectl logs -n smsf sinch-smsf-alarmhandler-0 -c alarmhandler | grep m3ua/728 | grep "Alert received" | grep remoteSPC=322

@@ -1,0 +1,151 @@
+- name: reboot ht worker
+  block:
+
+    - name: Get the IP addresses of workers
+      shell: kubectl get nodes -o wide | grep ht | awk '{print $6}'
+      register: k8s_htdworkers_ips
+
+    - name: Select a random High throughput worker IP
+      set_fact:
+        random_worker_ip: "{{ k8s_htdworkers_ips.stdout.split() | random }}"
+
+    - name: SSH connection to the High throughput worker and get hostname
+      command: ssh -o StrictHostKeyChecking=no {{ random_worker_ip }} hostname -s
+      register: node_hostname
+      changed_when: false
+      failed_when: node_hostname.rc != 0
+
+    - name: Set hostname facts
+      set_fact:
+        worker_hostname: "{{ node_hostname.stdout | trim }}"
+      
+    - name: Set artifact path facts
+      set_fact:
+        remote_artifact_path: "/tmp/RESI-TEST-31-{{ worker_hostname }}.md"
+
+    - name: Capture High throughput nodes before reboot
+      shell: |
+        echo "# List of High throughput nodes before reoot" >> {{ remote_artifact_path }}
+        echo "" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        kubectl get nodes -o wide | grep ht >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: Print the hostname of the rebooted worker
+      debug:
+        msg: "The rebooted worker is : {{ worker_hostname }}"
+
+    - name: Capture node state before reboot
+      shell: |
+        echo "# High throughput Node state before reboot" >> {{ remote_artifact_path }}
+        echo "" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        echo "{{ worker_hostname }}" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: Capture list of pods hosted in the the ht Node before test
+      shell: |
+        echo "# List of Pods Hosted in the {{ worker_hostname }} Node before test" >> {{ remote_artifact_path }}
+        echo "" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        kubectl get pods -o wide -A | grep {{ worker_hostname }} >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: Reboot the standard worker
+      command: ssh {{ random_worker_ip }} sudo reboot
+      async: 1
+      poll: 0
+
+
+    - name: wait while the Node is rebooting
+      shell: 
+        sleep 60
+        
+
+    - name: Capture list of pods hosted in the the ht Node during test
+      shell: |
+        echo "# List of Pods Hosted in the {{ worker_hostname }} Node during test" >> {{ remote_artifact_path }}
+        echo "" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        kubectl get pods -o wide -A | grep {{ worker_hostname }} >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+
+    - name: Make sure that the node is rebooted
+      shell: |
+        echo "# List of High throughput Nodes during reboot" >> {{ remote_artifact_path }}
+        echo "" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        kubectl get nodes -o wide | grep ht >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: Wait for node to be Ready again
+      shell: |
+        until kubectl get node {{ worker_hostname }} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' | grep True; do
+          sleep 10
+        done
+      retries: 30
+      delay: 10
+      register: node_status
+      changed_when: false
+
+
+    - name: Capture list of pods hosted in the the ht Node before test
+      shell: |
+        echo "# List of Pods Hosted in the {{ worker_hostname }} Node after test" >> {{ remote_artifact_path }}
+        echo "" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        kubectl get pods -o wide -A | grep {{ worker_hostname }} >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: Capture the return variable from checking whether the node is Ready or not
+      set_fact:
+        current_node_status: "{{ node_status.stdout.split() | trim }}"
+
+    - name: Add the current Node Status checking
+      shell: |
+        echo "# Cuurrent Node State while Rebooting" >> {{ remote_artifact_path }}
+        echo "" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        echo "Current Status: {{ current_node_status }}" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+
+    - name: Get the High throughput Nodes state after reboot
+      shell: |
+        echo "# List of High throughput Nodes state after reboot" >> {{ remote_artifact_path }}
+        echo "" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        kubectl get nodes -o wide | grep ht >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: Check High throughput rebooted node status
+      shell: |
+        kubectl get node {{ worker_hostname }} | awk '{print $2}' | tail -n 1
+      register: rebooted_node_status
+      changed_when: false
+
+    - name: Get the status node state after reboot
+      shell: |
+        echo "# Node state after reboot" >> {{ remote_artifact_path }}
+        echo "" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        echo "Node Name: {{ worker_hostname }}" >> {{ remote_artifact_path }}
+        echo "Node status: {{ rebooted_node_status.stdout }}" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: Pods dispatching in High throughput node
+      shell: |
+        echo "# Pods sispatching after reboot" >> {{ remote_artifact_path }}
+        echo "" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        kubectl get pods -n eric-pcg-2 -o wide | grep up-data >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: Capture list of pods hosted in the the ht Node before test
+      shell: |
+        echo "# List of Pods Hosted in the {{ worker_hostname }} Node after test" >> {{ remote_artifact_path }}
+        echo "" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        kubectl get pods -o wide -A | grep {{ worker_hostname }} >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}

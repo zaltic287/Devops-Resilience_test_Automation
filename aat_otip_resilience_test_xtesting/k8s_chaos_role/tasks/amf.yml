@@ -1,0 +1,11 @@
+- name: Exécuter une commande sur une autre cible via bastion
+  hosts: target
+  gather_facts: no
+  tasks:
+    - name: Lancer une commande shell sur la cible distante via bastion
+      shell: echo 'Hello depuis via le bastion !'
+      register: remote_cmd_result
+
+    - name: Afficher le résultat
+      debug:
+        var: remote_cmd_result.stdout

@@ -1,0 +1,84 @@
+      - name: check if the variable action is defined
+        fail:
+          msg: " you may specify a value for 'action' (delete_pod, reboot_worker, reboot_master or reboot_compute)."
+        when: action not in ["delete_pod", "reboot_worker", "reboot_master", "reboot_compute"]
+
+      - name: delete a pod when the action is 'delete_pod'
+        block:
+          - name: verify if the pod filter is defined
+            fail:
+              msg: "Error: you have to specify the variable 'pod_filter'."
+            when: pod_filter == ""
+
+          - name: Find the namespace of the pod matching the filter
+            shell: >
+              kubectl get pods --all-namespaces --no-headers |
+              grep {{ pod_filter }} | awk '{print $1}' | head -n 1
+            register: namespace_result
+            changed_when: false
+            failed_when: namespace_result.stdout == ""
+
+          - name: Set namespace fact
+            set_fact:
+              namespace: "{{ namespace_result.stdout | trim }}"
+
+          #Get the pod's state before deletoin
+          - name: Capture the state of the Pods before deletion
+            shell: |
+              echo "# Pod's state before deletion" >> /tmp/cluster_status.md
+              echo '```' >> /tmp/cluster_status.md
+              kubectl get pods -n {{namespace}} -o wide | grep {{pod_filter}} >> /tmp/cluster_status.md
+              echo '```' >> /tmp/cluster_status.md
+
+          - name: List of Pod correponding to the filter
+            shell: "kubectl get pod -n {{ namespace }} | grep {{ pod_filter }} | awk '{print $1}'"
+            register: pod_list
+            changed_when: false
+
+          - name: Liste of pods matching the filter before deletion
+            shell: "echo '**Pods avant suppression :** `{{ pod_list.stdout.split() }}`' >> /tmp/cluster_status.md"
+
+          - name: check if corresponding pod exists
+            fail:
+              msg: "No pod found with this filter '{{ pod_filter }}' in the namespace '{{ namespace}}'."
+            when: pod_list.stdout == ""
+
+          - name: select a random pod in the list
+            set_fact:
+              pod_name: "{{ pod_list.stdout.split() | random }}"
+
+          - name: Add the detion operation in the file 
+            shell: |
+              echo "## Deletion of one Pod from those matching the filter" >> /tmp/cluster_status.md
+              echo "Pod deleted : {{ pod_name }} " >> /tmp/cluster_status.md
+
+          - name: delete the pod
+            shell: "kubectl delete pod {{ pod_name }} -n {{ namespace }}"
+            register: delete_result
+            when: pod_name is defined
+
+          - name: Capture the state of the Pods matching the filter after deletion
+            shell: |
+              echo "## State after deletion" >> /tmp/cluster_status.md
+              echo '```' >> /tmp/cluster_status.md
+              kubectl get pods -n {{namespace}} -o wide | grep {{pod_filter}} >> /tmp/cluster_status.md
+              echo '```' >> /tmp/cluster_status.md
+
+          - name: Print the result
+            debug:
+              msg: "Deleted pod : {{ pod_name }}"
+  
+          #Copier le fichier Markdown sur l'hôte GitLab Runner
+          - name: Get the the file from the target node
+            fetch:
+              src: /tmp/cluster_status.md
+              dest: ./cluster_status.md
+              flat: yes
+
+          - name: Delete the file from the remote host
+            file:
+              path: /tmp/cluster_status.md
+              state: absent
+
+          
+        when: action == "delete_pod"

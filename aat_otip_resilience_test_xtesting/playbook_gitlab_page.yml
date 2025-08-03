@@ -1,0 +1,6 @@
+
+- name: fetch data from chaostest Pipeline
+  gather_facts: no
+  hosts: k8s_node
+  roles:
+  - postChaosTets

@@ -1,0 +1,42 @@
+
+include:
+  - local: 'templates/rules.yml'
+  
+stages:
+- postChaos
+
+image: registry.gitlab.tech.orange/oln/aoc-ci-automation/admin/ansible-docker-image:1.0.4
+
+postChaosTets:
+  
+    extends: .rule_policy
+    #needs: 
+     # - job: chaosTesting
+      #  artifacts: true
+        
+    stage: postChaos
+    only: 
+    - pipeline
+  
+    script: |
+      cat <<EOF > inventory.ini
+      k8s_node ansible_host=$SSH_TARGET ansible_python_interpreter=/usr/bin/python3
+
+      [bastion]
+      10.194.112.73 ansible_user=pcc-admin
+      EOF
+
+      ANSIBLE_BECOME_PASS="${ANSIBLE_PASS}"
+          ansible-playbook -i inventory.ini -u $SSH_USER playbook.yml -e "gitlab_pipeline_id=$GITLAB_PIPELINE_ID pipeline_name=$PIPELINE_NAME job_status=$CI_JOB_STATUS job_name=$JOB_NAME cluster=$CLUSTER ci_user=$CI_USER"
+
+    
+    artifacts:
+      paths:
+      - public
+      expire_in: 1 hour
+      
+    tags:
+        - graas-like
+        - nis
+        - k8s
+

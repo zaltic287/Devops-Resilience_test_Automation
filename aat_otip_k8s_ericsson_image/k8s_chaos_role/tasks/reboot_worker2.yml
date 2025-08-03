@@ -1,0 +1,90 @@
+- name:
+  block:
+    - name: Get the IP addresses of workers
+      command: kubectl get nodes --selector='!node-role.kubernetes.io/control-plane' -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'
+      register: k8s_workers_ips
+
+    - name: Select a random worker IP
+      set_fact:
+        random_worker_ip: "{{ k8s_workers_ips.stdout.split() | random }}"
+
+    - name: SSH to the worker and get hostname
+      command: ssh -o StrictHostKeyChecking=no {{ random_worker_ip }} hostname -s
+      register: node_hostname
+      changed_when: false
+      failed_when: node_hostname.rc != 0
+
+    - name: Set hostname facts
+      set_fact:
+        worker_hostname: "{{ node_hostname.stdout | trim }}"
+      
+    - name: Set artifact path facts
+      set_fact:
+        remote_artifact_path: "/tmp/{{ worker_hostname }}.md" 
+
+    - name: Print the hostname of the rebooted worker
+      debug:
+        msg: "The rebooted worker is : {{ worker_hostname }}"
+
+    - name: Capture node state before reboot
+      shell: |
+        echo "# Node Description before reboot" >> {{ remote_artifact_path }}
+        echo "" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        kubectl describe node {{ worker_hostname }} >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: Reboot the worker
+      command: ssh {{ random_worker_ip }} sudo reboot
+      async: 1
+      poll: 0
+
+
+    - name: wait while the Node is rebooting
+      shell: 
+        sleep 60
+        
+
+    - name: Wait for node to be Ready again
+      shell: |
+        until kubectl get node {{ worker_hostname }} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' | grep True; do
+          sleep 10
+        done
+      retries: 30
+      delay: 10
+      register: node_status
+      changed_when: false
+
+
+    - name: Capture the return varible from checking whether the node is Ready or not
+      set_fact:
+        current_node_status: "{{ node_status.stdout.split() | trim }}"
+
+    - name: Add the current Node Status checking
+      shell: |
+        echo "# Cuurrent Node State while Rebooting" >> {{ remote_artifact_path }}
+        echo "" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        echo "{{ current_node_status }}" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: Get node state after reboot
+      shell: |
+        echo "#Node state after reboot" >> {{ remote_artifact_path }}
+        echo "" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        kubectl get node {{ worker_hostname }} -o wide >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: Fetch node reboot artifact to GitLab Runner
+      fetch:
+        src: "{{ remote_artifact_path }}"
+        dest: "public/"
+        flat: yes
+
+    - name: Clean up remote artifact file
+      file:
+        path: "{{ remote_artifact_path }}"
+        state: absent
+
+  when: action == "reboot_worker"

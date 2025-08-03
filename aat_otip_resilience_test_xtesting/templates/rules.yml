@@ -1,0 +1,25 @@
+.rule_policy:
+  
+  before_script: |
+      eval $(ssh-agent -s)
+      echo "$SSH_PRIVATE" | tr -d '\r' | ssh-add -
+      mkdir -p ~/.ssh/
+      chmod 700 ~/.ssh/
+      ssh-keyscan $SSH_TARGET_SITE2 >> ~/.ssh/known_hosts
+      ssh-keyscan $SSH_TARGET_SITE1 >> ~/.ssh/known_hosts
+      chmod 644 ~/.ssh/known_hosts
+      
+      if [[ "$CLUSTER" == "eccd6" ]]; then
+        export SSH_TARGET="$SSH_TARGET_SITE2"
+        export ANSIBLE_PASS="$ANSIBLE_PASS_SITE2"
+        export AMF_SITE="$AMF_TARGET_SITE2"
+        export SMF_SITE="$SMF_TARGET_SITE2"
+      elif [[ "$CLUSTER" == "eccd5" ]]; then
+        export SSH_TARGET="$SSH_TARGET_SITE1"
+        export ANSIBLE_PASS="$ANSIBLE_PASS_SITE1"
+        export AMF_SITE="$AMF_TARGET_SITE1"
+        export SMF_SITE="$SMF_TARGET_SITE1"
+      fi
+      echo "CLUSTER TARGET : $SSH_TARGET"
+      ssh-keygen -R $AMF_SITE
+      ssh-keygen -R $SMF_SITE

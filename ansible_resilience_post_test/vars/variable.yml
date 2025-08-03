@@ -1,0 +1,17 @@
+variables:
+
+  CLUSTER:
+    value: "eccd6"
+    options: 
+      - ""
+      - "eccd5"
+      - "eccd6"
+    description: "Choose the cluster. Set eccd6 by default"
+    
+  ACTION:
+    value: "[run_all_chaos_test]"
+    options: 
+      - "[run_all_chaos_test]"
+    description: "The name of the pipeline. Set [run_all_chaos_test] by default"
+  
+  DUREE: ""

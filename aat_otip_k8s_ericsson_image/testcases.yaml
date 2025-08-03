@@ -1,0 +1,29 @@
+tiers: 
+  - name: Resilience Test
+    description: 'This tier contains tests related to resilience tests performed by ansible'
+    testcases:
+      - case_name: chaos
+        project_name: chaos_test
+        criteria: 100
+        blocking: true
+        clean_flag: false
+        description: 'This playbook launch the chaos test'
+        run:
+          name: ansible
+          args:
+            cmd: 'ANSIBLE_BECOME_PASS="${ANSIBLE_PASS}" ansible-playbook -i inventory.ini -u $SSH_USER'
+            private_data_dir: /opt/xtesting/
+            playbook: playbook.yml
+
+      - case_name: gitlab_page
+        project_name: webpage
+        criteria: 100
+        blocking: true
+        clean_flag: false
+        description: 'This playbook launch the gitlab pages after the chaos test'
+        run:
+          name: gitlabpage
+          args:
+            cmd: 'ANSIBLE_BECOME_PASS="${ANSIBLE_PASS}" ansible-playbook -i inventory.ini -u $SSH_USER'
+            private_data_dir: /opt/xtesting/
+            playbook: playbook2.yml

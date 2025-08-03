@@ -1,0 +1,90 @@
+- name: reboot compute Node hosting highthrought put workers
+  block:
+
+    - name: SSH connection to CEE and Get compute hosting ht nodes
+      shell: |
+        sshpass -p '{{ ssh_password_cee }}' ssh -o StrictHostKeyChecking=no \
+          {{cee_user}}@{{ cee_ip_address | trim }} \
+          "cee host list | grep eri-5gc-comp-3"
+      register: cee_compute_list
+      changed_when: false
+      failed_when: false
+      delegate_to: localhost
+
+
+    - name: SSH connection to CEE and Get compute hosting ht nodes
+      shell: |
+        sshpass -p '{{ ssh_password_cee }}' ssh -o StrictHostKeyChecking=no \
+          {{cee_user}}@{{ cee_ip_address | trim }} \
+          "cee host list | grep eri-5gc-comp-3 | awk -F '|' '{gsub(/^ +| +$/, \"\", \$2); print \$2; exit}'"
+      register: cee_compute
+      changed_when: false
+      failed_when: false
+      delegate_to: localhost
+
+
+    - name: Set compute node hostname facts
+      set_fact:
+        compute_hostname: "{{ cee_compute.stdout | trim }}"
+
+      
+    - name: Set artifact path facts
+      set_fact:
+        remote_artifact_path: "/tmp/RESI-TEST-33-{{ compute_hostname }}.md"
+
+
+    - name: Print compute node
+      shell: |
+        echo "# List of compute node" >> {{ remote_artifact_path }}
+        echo "" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        echo "{{cee_compute_list.stdout}}" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: Capture nodes before reboot
+      shell: |
+        echo "# List of nodes before reboot" >> {{ remote_artifact_path }}
+        echo "" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        kubectl get nodes -o wide | grep {{compute_hostname}} >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+    - name: Print the hostname of the rebooted compute
+      debug:
+        msg: "The rebooted Compute Node is : {{ compute_hostname }}"
+
+
+#    - name: SSH to CEE, get compute node name, and reboot it from there
+#      shell: |
+#        sshpass -p '{{ ssh_password_cee }}' ssh -o StrictHostKeyChecking=no ceeinfra@{{ cee_ip_address | trim }} "
+#          compute_node=\$(cee host list | grep eri-5gc-comp-3 | awk -F '|' '{gsub(/^ +| +$/, \"\", \$2); print \$2; exit}');
+#          echo 'Rebooting node: '\$compute_node;
+#          ssh -o StrictHostKeyChecking=no \$compute_node \
+#            \"echo '' | sudo -S reboot\"
+#        "
+#      register: reboot_output
+#      changed_when: false
+#      failed_when: false
+#      delegate_to: localhost
+
+
+    - name: Capture Compute node state before reboot
+      shell: |
+        echo "# Compute node" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        echo " Compute Node to be Rebooted: {{ compute_hostname }} " >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+
+
+#    - name: wait while the master node is rebooting
+#      shell: 
+#        sleep 65
+
+
+    - name: Get the Nodes state after reboot
+      shell: |
+        echo "# List of nodes after reboot" >> {{ remote_artifact_path }}
+        echo "" >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
+        kubectl get nodes -o wide >> {{ remote_artifact_path }}
+        echo '```' >> {{ remote_artifact_path }}
