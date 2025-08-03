@@ -1,8 +1,5 @@
 # Devops Resilience test Automation
 
-
-# Playbook Ansible : Deletion of a Kubernetes Pod
-
 ## Description
 
 This Ansible playboook is used to delete a pod in a kubernetes cluster based on a given filter.
