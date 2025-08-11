@@ -1,4 +1,4 @@
-FROM registry.gitlab.tech.orange/oln/nif/validation-skc/core/xtesting-drivers/opnfv-functest-xtesting
+FROM <image_with_xtesting>
 
 # Copy chaos Playbook,Gitlab Playbook, and `testcases.yaml` file
 
@@ -16,6 +16,7 @@ RUN apk update && apk --no-cache upgrade && \
 # Setup the Python project and install the dependencies in the provided virtual environment (using the 'pyproject.toml' file)
 USER xtesting
 RUN /opt/xtesting/venv/bin/pip install --upgrade --no-cache-dir /opt/xtesting
+
 
 
 
