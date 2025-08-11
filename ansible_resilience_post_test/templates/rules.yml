@@ -17,3 +17,6 @@
         export ANSIBLE_PASS="$ANSIBLE_PASS_SITE1"
       fi
       echo "CLUSTER TARGET : $SSH_TARGET"
+      cat <<EOF > inventory.ini
+      k8s_node ansible_host=$SSH_TARGET ansible_python_interpreter=/usr/bin/python3
+
